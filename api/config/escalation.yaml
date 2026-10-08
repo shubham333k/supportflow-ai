@@ -1,0 +1,67 @@
+# Escalation Engine Configuration
+# Scoring ranges 0-100; strictly drives tier assignment unless overridden by hard rules.
+
+weights:
+  urgency:
+    low: 3
+    medium: 10
+    high: 18
+    critical: 25
+
+  sentiment:
+    positive: 0
+    neutral: 0
+    negative: 6
+    frustrated: 10
+    angry: 15
+
+  customer_tier:
+    enterprise: 10
+    pro: 6
+    standard: 3
+    unknown: 3
+
+  issue:
+    security_issue: 20
+    billing_issue: 16
+    refund_request: 16
+    account_access: 14
+    complaint: 12
+    technical_issue: 8
+    subscription_change: 6
+    sales_question: 4
+    other: 4
+    product_question: 2
+    feature_request: 2
+    general_question: 2
+
+  prior:
+    open_ticket_30d: 8
+    repeat_same_intent: 7
+    mentioned_no_record: 4
+    cap: 15
+
+  sla:
+    over_90: 10
+    over_50: 5
+
+  threat: 5
+
+tiers_desc:
+  - ["immediate", 80]
+  - ["priority", 60]
+  - ["ai_assisted", 30]
+  - ["automated", 0]
+
+sla_hours:
+  immediate: 1
+  priority: 4
+  ai_assisted: 24
+  automated: 48
+
+# Tiers ordered from lowest to highest for comparison
+tier_order:
+  - automated
+  - ai_assisted
+  - priority
+  - immediate

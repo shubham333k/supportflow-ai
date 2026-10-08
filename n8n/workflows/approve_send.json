@@ -1,0 +1,88 @@
+{
+  "name": "SupportFlow AI - Approve & Send Dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supportflow-approve-send",
+        "options": {}
+      },
+      "id": "node-approve-webhook",
+      "name": "Approve & Send Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "supportflow-approve-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify payload and format thread response\nconst item = $input.first().json;\nconst ticketId = item.ticket_id || item.body?.ticket_id;\nconst replyText = item.reply || item.body?.reply;\nconst approvedBy = item.approved_by || item.body?.approved_by || 'operator';\n\nreturn [{\n  json: {\n    ticket_id: ticketId,\n    reply: replyText,\n    approved_by: approvedBy,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-verify-hmac",
+      "name": "Format Outbound Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://api:8000/api/v1/tickets/{{ $json.ticket_id }}/sent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY || 'dev-supportflow-api-key-change-me' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "sent_body",
+              "value": "={{ $json.reply }}"
+            },
+            {
+              "name": "approved_by",
+              "value": "={{ $json.approved_by }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-mark-sent",
+      "name": "POST /tickets/{id}/sent Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#support-log",
+        "text": "=✅ *Reply Sent to Customer*\n*Ticket:* `{{ $json.ticket_id }}`\n*Approved By:* `{{ $node['node-verify-hmac'].json.approved_by }}`\n*Status:* Marked waiting_customer."
+      },
+      "id": "node-slack-sent-confirm",
+      "name": "Slack Sent Confirmation",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [820, 300]
+    }
+  ],
+  "connections": {
+    "node-approve-webhook": {
+      "main": [[{ "node": "node-verify-hmac", "type": "main", "index": 0 }]]
+    },
+    "node-verify-hmac": {
+      "main": [[{ "node": "node-api-mark-sent", "type": "main", "index": 0 }]]
+    },
+    "node-api-mark-sent": {
+      "main": [[{ "node": "node-slack-sent-confirm", "type": "main", "index": 0 }]]
+    }
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "name": "SupportFlow AI - Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-error-trigger",
+      "name": "Workflow Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/api/v1/audit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY || 'dev-supportflow-api-key-change-me' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "actor",
+              "value": "n8n"
+            },
+            {
+              "name": "event_type",
+              "value": "workflow_execution_error"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.execution?.error?.message || 'Workflow execution failed' }}"
+            },
+            {
+              "name": "n8n_execution_id",
+              "value": "={{ $json.execution?.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-post-audit",
+      "name": "POST /audit Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#alerts-urgent",
+        "text": "=❌ *n8n Pipeline Failure*\n*Execution ID:* `{{ $json.execution?.id }}`\n*Workflow:* `{{ $json.workflow?.name }}`\n*Error:* `{{ $json.execution?.error?.message }}`\n*Action:* Ticket flagged for manual review."
+      },
+      "id": "node-slack-alert-error",
+      "name": "Slack Error Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [580, 300]
+    }
+  ],
+  "connections": {
+    "node-error-trigger": {
+      "main": [[{ "node": "node-api-post-audit", "type": "main", "index": 0 }]]
+    },
+    "node-api-post-audit": {
+      "main": [[{ "node": "node-slack-alert-error", "type": "main", "index": 0 }]]
+    }
+  }
+}

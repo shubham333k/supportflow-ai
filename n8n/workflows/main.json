@@ -1,0 +1,262 @@
+{
+  "name": "SupportFlow AI - Main Ingest & Triage Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supportflow-inbound",
+        "options": {}
+      },
+      "id": "node-trigger-webhook",
+      "name": "Inbound Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "supportflow-inbound-webhook"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "channel",
+              "value": "={{ $json.body.channel || 'email' }}"
+            },
+            {
+              "name": "external_message_id",
+              "value": "={{ $json.body.external_message_id || $json.headers['message-id'] || 'msg-' + $now.toMillis() }}"
+            },
+            {
+              "name": "thread_id",
+              "value": "={{ $json.body.thread_id || $json.body.external_message_id || 'thread-' + $now.toMillis() }}"
+            },
+            {
+              "name": "from_email",
+              "value": "={{ ($json.body.from_email || $json.body.sender || '').toLowerCase().trim() }}"
+            },
+            {
+              "name": "from_name",
+              "value": "={{ $json.body.from_name || 'Customer' }}"
+            },
+            {
+              "name": "subject",
+              "value": "={{ $json.body.subject || 'Support Request' }}"
+            },
+            {
+              "name": "body",
+              "value": "={{ $json.body.body || $json.body.message || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-normalize",
+      "name": "Normalize Inbound Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ Boolean($json.from_email.includes('noreply') || $json.from_email.includes('no-reply') || $json.from_email.includes('mailer-daemon') || $json.from_email.includes('support@supportflow.ai') || $json.subject.toLowerCase().startsWith('out of office') || $json.subject.toLowerCase().startsWith('automatic reply') || $json.subject.toLowerCase().startsWith('undeliverable')) }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-loop-guard",
+      "name": "Loop Guard Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/api/v1/messages/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY || 'dev-supportflow-api-key-change-me' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "channel", "value": "={{ $json.channel }}" },
+            { "name": "external_message_id", "value": "={{ $json.external_message_id }}" },
+            { "name": "thread_id", "value": "={{ $json.thread_id }}" },
+            { "name": "from_email", "value": "={{ $json.from_email }}" },
+            { "name": "from_name", "value": "={{ $json.from_name }}" },
+            { "name": "subject", "value": "={{ $json.subject }}" },
+            { "name": "body", "value": "={{ $json.body }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-ingest",
+      "name": "POST /messages/ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [780, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_duplicate }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-check-duplicate",
+      "name": "Is Duplicate Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://api:8000/api/v1/tickets/{{ $json.ticket_id }}/analyze",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY || 'dev-supportflow-api-key-change-me' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-analyze",
+      "name": "POST /tickets/{id}/analyze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1220, 480]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://api:8000/api/v1/tickets/{{ $json.ticket_id }}/draft",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY || 'dev-supportflow-api-key-change-me' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-draft",
+      "name": "POST /tickets/{id}/draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 480]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.tier }}",
+        "rules": {
+          "rules": [
+            { "value2": "immediate", "output": 0 },
+            { "value2": "priority", "output": 1 },
+            { "value2": "ai_assisted", "output": 2 },
+            { "value2": "automated", "output": 3 }
+          ]
+        }
+      },
+      "id": "node-switch-tier",
+      "name": "Branch on Tier & Send Mode",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1680, 480]
+    },
+    {
+      "parameters": {
+        "channel": "#alerts-urgent",
+        "text": "=🚨 *IMMEDIATE ESCALATION (SLA: 1h)*\n*Ticket:* `{{ $json.ticket_id }}`\n*Score:* `{{ $node['node-api-analyze'].json.score }}/100`\n*Action:* Operator review required immediately\n*Workbench:* http://localhost:8501/?ticket={{ $json.ticket_id }}"
+      },
+      "id": "node-slack-immediate",
+      "name": "Slack Immediate Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1940, 260]
+    },
+    {
+      "parameters": {
+        "channel": "#support-approvals",
+        "text": "=⚠️ *PRIORITY TICKET QUEUED FOR APPROVAL (SLA: 4h)*\n*Ticket:* `{{ $json.ticket_id }}`\n*Tier:* Priority\n*Review in Dashboard:* http://localhost:8501/?ticket={{ $json.ticket_id }}"
+      },
+      "id": "node-slack-priority",
+      "name": "Slack Approval Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1940, 420]
+    },
+    {
+      "parameters": {
+        "channel": "#support-log",
+        "text": "=ℹ️ *AI Auto-Answer Sent*\n*Ticket:* `{{ $json.ticket_id }}`\n*Tier:* {{ $json.tier }}\n*Status:* Auto Resolved with citations."
+      },
+      "id": "node-slack-automated",
+      "name": "Slack Auto-Send FYI",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1940, 600]
+    }
+  ],
+  "connections": {
+    "node-trigger-webhook": {
+      "main": [[{ "node": "node-normalize", "type": "main", "index": 0 }]]
+    },
+    "node-normalize": {
+      "main": [[{ "node": "node-loop-guard", "type": "main", "index": 0 }]]
+    },
+    "node-loop-guard": {
+      "main": [
+        [],
+        [{ "node": "node-api-ingest", "type": "main", "index": 0 }]
+      ]
+    },
+    "node-api-ingest": {
+      "main": [[{ "node": "node-check-duplicate", "type": "main", "index": 0 }]]
+    },
+    "node-check-duplicate": {
+      "main": [
+        [],
+        [{ "node": "node-api-analyze", "type": "main", "index": 0 }]
+      ]
+    },
+    "node-api-analyze": {
+      "main": [[{ "node": "node-api-draft", "type": "main", "index": 0 }]]
+    },
+    "node-api-draft": {
+      "main": [[{ "node": "node-switch-tier", "type": "main", "index": 0 }]]
+    },
+    "node-switch-tier": {
+      "main": [
+        [{ "node": "node-slack-immediate", "type": "main", "index": 0 }],
+        [{ "node": "node-slack-priority", "type": "main", "index": 0 }],
+        [{ "node": "node-slack-automated", "type": "main", "index": 0 }],
+        [{ "node": "node-slack-automated", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "name": "SupportFlow AI - SLA Scan & CSAT Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-cron",
+      "name": "Every 5 Minutes Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/api/v1/sla/scan",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY || 'dev-supportflow-api-key-change-me' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-sla-scan",
+      "name": "POST /sla/scan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Unpack scan items for routing\nconst scan = $input.first().json;\nconst out = [];\n\nif (scan.warnings_50 && scan.warnings_50.length) {\n  scan.warnings_50.forEach(t => out.push({ json: { type: '50_warning', ticket_id: t } }));\n}\nif (scan.warnings_90 && scan.warnings_90.length) {\n  scan.warnings_90.forEach(t => out.push({ json: { type: '90_warning', ticket_id: t } }));\n}\nif (scan.breaches && scan.breaches.length) {\n  scan.breaches.forEach(t => out.push({ json: { type: 'breach', ticket_id: t } }));\n}\n\nreturn out.length ? out : [{ json: { type: 'idle' } }];"
+      },
+      "id": "node-unpack-sla-events",
+      "name": "Unpack SLA Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [580, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.type }}",
+        "rules": {
+          "rules": [
+            { "value2": "50_warning", "output": 0 },
+            { "value2": "90_warning", "output": 1 },
+            { "value2": "breach", "output": 2 }
+          ]
+        }
+      },
+      "id": "node-switch-sla",
+      "name": "Branch on SLA Event Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [820, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#support-alerts",
+        "text": "=⏰ *SLA 50% Warning*\nTicket `{{ $json.ticket_id }}` has elapsed 50% of its target response time."
+      },
+      "id": "node-slack-50",
+      "name": "Slack 50% Warning",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1080, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://api:8000/api/v1/tickets/{{ $json.ticket_id }}/escalate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.API_KEY || 'dev-supportflow-api-key-change-me' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "reason",
+              "value": "sla_90"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-api-escalate-90",
+      "name": "Auto-Escalate at 90%",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "channel": "#alerts-urgent",
+        "text": "=🚨 *CRITICAL SLA BREACH*\nTicket `{{ $json.ticket_id }}` has breached its target deadline! Urgent manager attention required."
+      },
+      "id": "node-slack-breach",
+      "name": "Slack Breach Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1080, 460]
+    }
+  ],
+  "connections": {
+    "node-schedule-cron": {
+      "main": [[{ "node": "node-api-sla-scan", "type": "main", "index": 0 }]]
+    },
+    "node-api-sla-scan": {
+      "main": [[{ "node": "node-unpack-sla-events", "type": "main", "index": 0 }]]
+    },
+    "node-unpack-sla-events": {
+      "main": [[{ "node": "node-switch-sla", "type": "main", "index": 0 }]]
+    },
+    "node-switch-sla": {
+      "main": [
+        [{ "node": "node-slack-50", "type": "main", "index": 0 }],
+        [{ "node": "node-api-escalate-90", "type": "main", "index": 0 }],
+        [{ "node": "node-slack-breach", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

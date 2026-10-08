@@ -1,0 +1,32 @@
+  PASS: HMAC signature generation & verification
+  PASS: Rate limiter sliding window
+  PASS: HubSpotClient mock mode detection
+  FAIL: Escalation scoring (scenario A -> immediate)
+        score_ticket() got an unexpected keyword argument 'urgency_level'
+Traceback (most recent call last):
+  File "C:\Users\shubh\Automation Pro\scripts\smoke_test.py", line 26, in run_test
+    fn()
+    ~~^^
+  File "C:\Users\shubh\Automation Pro\scripts\smoke_test.py", line 72, in test_escalation
+    score_obj = score_ticket(
+        urgency_level="high",
+    ...<5 lines>...
+        threat_detected=True,
+    )
+TypeError: score_ticket() got an unexpected keyword argument 'urgency_level'
+
+  FAIL: Loop guard auto-reply detection
+        cannot import name 'is_auto_reply' from 'api.app.services.loop_guard' (C:\Users\shubh\Automation Pro\api\app\services\loop_guard.py)
+Traceback (most recent call last):
+  File "C:\Users\shubh\Automation Pro\scripts\smoke_test.py", line 26, in run_test
+    fn()
+    ~~^^
+  File "C:\Users\shubh\Automation Pro\scripts\smoke_test.py", line 88, in test_loop_guard
+    from api.app.services.loop_guard import is_auto_reply
+ImportError: cannot import name 'is_auto_reply' from 'api.app.services.loop_guard' (C:\Users\shubh\Automation Pro\api\app\services\loop_guard.py)
+
+  PASS: Evaluation dataset integrity (40 msgs, 24/16 split)
+
+=======================================================
+  Results: 4 passed, 2 failed
+=======================================================
